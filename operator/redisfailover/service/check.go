@@ -405,7 +405,8 @@ func (r *RedisFailoverChecker) CheckAllPodsReady(rf *redisfailoverv1.RedisFailov
 			return false, nil
 		}
 
-		if rp.Status.Phase == corev1.PodRunning && rp.DeletionTimestamp != nil {
+		// Status.Phase == "Running" and non-empty DeletionTimestamp equals terminating
+		if rp.DeletionTimestamp != nil {
 			r.logger.Debugf("Pod %s (%s) is in terminating state", rp.Name, rp.Status.PodIP)
 			return false, nil
 		}

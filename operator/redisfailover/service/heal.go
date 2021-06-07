@@ -141,7 +141,7 @@ func (r *RedisFailoverHealer) SetExternalMasterOnAll(masterIP, masterPort string
 
 // NewSentinelMonitor changes the master that Sentinel has to monitor
 func (r *RedisFailoverHealer) NewSentinelMonitor(ip string, monitor string, rf *redisfailoverv1.RedisFailover) error {
-	r.logger.Debug("Sentinel is not monitoring the correct master, changing...")
+	r.logger.Debugf("Sentinel %s is not monitoring the correct master, changing...", ip)
 	quorum := strconv.Itoa(int(getQuorum(rf)))
 
 	password, err := k8s.GetRedisPassword(r.k8sService, rf)
@@ -154,7 +154,7 @@ func (r *RedisFailoverHealer) NewSentinelMonitor(ip string, monitor string, rf *
 
 // NewSentinelMonitorWithPort changes the master that Sentinel has to monitor by the provided IP and Port
 func (r *RedisFailoverHealer) NewSentinelMonitorWithPort(ip string, monitor string, monitorPort string, rf *redisfailoverv1.RedisFailover) error {
-	r.logger.Debug("Sentinel is not monitoring the correct master, changing...")
+	r.logger.Debugf("Sentinel %s is not monitoring the correct master, changing...", ip)
 	quorum := strconv.Itoa(int(getQuorum(rf)))
 
 	password, err := k8s.GetRedisPassword(r.k8sService, rf)
@@ -167,7 +167,7 @@ func (r *RedisFailoverHealer) NewSentinelMonitorWithPort(ip string, monitor stri
 
 // RestoreSentinel clear the number of sentinels on memory
 func (r *RedisFailoverHealer) RestoreSentinel(ip string) error {
-	r.logger.Debugf("Restoring sentinel %s...", ip)
+	r.logger.Debugf("Resetting sentinel %s...", ip)
 	return r.redisClient.ResetSentinel(ip)
 }
 

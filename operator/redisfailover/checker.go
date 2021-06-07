@@ -13,6 +13,7 @@ const (
 
 //UpdateRedisesPods if the running version of pods are equal to the statefulset one
 func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailover) error {
+	r.logger.Debug("Entering UpdateRedisesPods")
 	redises, err := r.rfChecker.GetRedisesIPs(rf)
 	if err != nil {
 		return err
@@ -34,6 +35,7 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 			}
 		}
 	}
+	r.logger.Debug("All replicas are ready")
 
 	ssUR, err := r.rfChecker.GetStatefulSetUpdateRevision(rf)
 	if err != nil {
@@ -53,6 +55,7 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 		}
 		if revision != ssUR {
 			//Delete pod and wait next round to check if the new one is synced
+			r.logger.Debugf("replica pod %s revision %s does not equal ssUR %s", pod, revision, ssUR)
 			r.rfHealer.DeletePod(pod, rf)
 			return nil
 		}
@@ -67,18 +70,22 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 
 		masterRevision, err := r.rfChecker.GetRedisRevisionHash(master, rf)
 		if masterRevision != ssUR {
+			r.logger.Debugf("primary pod %s revision %s does not equal ssUR %s", master, masterRevision, ssUR)
 			r.rfHealer.DeletePod(master, rf)
 			return nil
 		}
 	}
 
+	r.logger.Debug("Leaving UpdateRedisesPods")
 	return nil
 }
 
 // CheckAndHeal runs verifcation checks to ensure the RedisFailover is in an expected and healthy state.
 // If the checks do not match up to expectations, an attempt will be made to "heal" the RedisFailover into a healthy state.
 func (r *RedisFailoverHandler) CheckAndHeal(rf *redisfailoverv1.RedisFailover) error {
+	r.logger.Debug("Entering CheckAndHeal")
 	if rf.Bootstrapping() {
+		r.logger.Debug("This resource is bootstrapping...")
 		return r.checkAndHealBootstrapMode(rf)
 	}
 
@@ -120,13 +127,15 @@ func (r *RedisFailoverHandler) CheckAndHeal(rf *redisfailoverv1.RedisFailover) e
 			return err2
 		}
 		if minTime > timeToPrepare {
-			r.logger.Debugf("time %.f more than expected. Not even one master, fixing...", minTime.Round(time.Second).Seconds())
+			r.logger.Debugf("been waiting more than %.f and no primary found. Setting oldest pod to master...", minTime.Round(time.Second).Seconds())
 			// We can consider there's an error
+			// TODO should respect priority config on Redis instance
 			if err2 := r.rfHealer.SetOldestAsMaster(rf); err2 != nil {
 				return err2
 			}
 		} else {
 			// We'll wait until failover is done
+			// TODO is it necessarily a failover that gets us here... ?
 			r.logger.Debug("No master found, wait until failover")
 			return nil
 		}
@@ -168,7 +177,12 @@ func (r *RedisFailoverHandler) CheckAndHeal(rf *redisfailoverv1.RedisFailover) e
 			}
 		}
 	}
-	return r.checkAndHealSentinels(rf, sentinels)
+	if err := r.checkAndHealSentinels(rf, sentinels); err != nil {
+		return err
+	}
+
+	r.logger.Debug("Leaving CheckAndHeal")
+	return nil
 }
 
 func (r *RedisFailoverHandler) checkAndHealBootstrapMode(rf *redisfailoverv1.RedisFailover) error {
@@ -203,7 +217,7 @@ func (r *RedisFailoverHandler) checkAndHealBootstrapMode(rf *redisfailoverv1.Red
 		}
 		for _, sip := range sentinels {
 			if err := r.rfChecker.CheckSentinelMonitor(sip, bootstrapSettings.Host, bootstrapSettings.Port); err != nil {
-				r.logger.Debug("Sentinel is not monitoring the correct master")
+				r.logger.Debugf("Sentinel %s is not monitoring the correct master", sip)
 				if err := r.rfHealer.NewSentinelMonitorWithPort(sip, bootstrapSettings.Host, bootstrapSettings.Port, rf); err != nil {
 					return err
 				}
@@ -228,9 +242,11 @@ func (r *RedisFailoverHandler) applyRedisCustomConfig(rf *redisfailoverv1.RedisF
 }
 
 func (r *RedisFailoverHandler) checkAndHealSentinels(rf *redisfailoverv1.RedisFailover, sentinels []string) error {
+	r.logger.Debug("Entering checkAndHealSentinels")
+
 	for _, sip := range sentinels {
 		if err := r.rfChecker.CheckSentinelNumberInMemory(sip, rf); err != nil {
-			r.logger.Debug("Sentinel has more sentinel in memory than spected")
+			r.logger.Debugf("Sentinel %s has more sentinel in memory than spected", sip)
 			if err := r.rfHealer.RestoreSentinel(sip); err != nil {
 				return err
 			}
@@ -238,7 +254,7 @@ func (r *RedisFailoverHandler) checkAndHealSentinels(rf *redisfailoverv1.RedisFa
 	}
 	for _, sip := range sentinels {
 		if err := r.rfChecker.CheckSentinelSlavesNumberInMemory(sip, rf); err != nil {
-			r.logger.Debug("Sentinel has more slaves in memory than spected")
+			r.logger.Debugf("Sentinel %s has more slaves in memory than spected", sip)
 			if err := r.rfHealer.RestoreSentinel(sip); err != nil {
 				return err
 			}
@@ -249,5 +265,7 @@ func (r *RedisFailoverHandler) checkAndHealSentinels(rf *redisfailoverv1.RedisFa
 			return err
 		}
 	}
+
+	r.logger.Debug("Leaving checkAndHealSentinels")
 	return nil
 }

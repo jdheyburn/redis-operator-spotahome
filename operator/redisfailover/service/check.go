@@ -156,6 +156,7 @@ func (r *RedisFailoverChecker) GetMasterIP(rf *redisfailoverv1.RedisFailover) (s
 			return "", err
 		}
 		if master {
+			r.logger.Debugf("%s says it is a master", rip)
 			masters = append(masters, rip)
 		}
 	}
@@ -163,6 +164,7 @@ func (r *RedisFailoverChecker) GetMasterIP(rf *redisfailoverv1.RedisFailover) (s
 	if len(masters) != 1 {
 		return "", errors.New("number of redis nodes known as master is different than 1")
 	}
+	r.logger.Debugf("Master discovered at %s ", masters[0])
 	return masters[0], nil
 }
 

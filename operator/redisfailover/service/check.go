@@ -48,6 +48,7 @@ type RedisFailoverCheck interface {
 	GetStatefulSetUpdateRevision(rFailover *redisfailoverv1.RedisFailover) (string, error)
 	GetRedisRevisionHash(podName string, rFailover *redisfailoverv1.RedisFailover) (string, error)
 	CheckRedisSlavesReady(slaveIP string, rFailover *redisfailoverv1.RedisFailover) (bool, error)
+	CheckAllPodsReady(rFailover *redisfailoverv1.RedisFailover) (bool, error)
 }
 
 // RedisFailoverChecker is our implementation of RedisFailoverCheck interface
@@ -377,6 +378,37 @@ func (r *RedisFailoverChecker) CheckRedisSlavesReady(ip string, rFailover *redis
 	if !strings.Contains(replicationInfo, redisLinkUp) {
 		r.logger.Debugf("Replica %s is not ready: redis link not up - expected %s", ip, redisLinkUp)
 		return false, err
+	}
+
+	return true, nil
+}
+
+// CheckAllRunningPods fails for any pods not in running state
+func (r *RedisFailoverChecker) CheckAllPodsReady(rf *redisfailoverv1.RedisFailover) (bool, error) {
+	ss, err := r.k8sService.GetStatefulSet(rf.Namespace, GetRedisName(rf))
+	if err != nil {
+		return false, err
+	}
+
+	if ss.Status.ReadyReplicas != ss.Status.Replicas {
+		r.logger.Debugf("Statefulset %s expected %s pods but only %s are ready", ss.ObjectMeta.Name, ss.Status.Replicas, ss.Status.ReadyReplicas)
+		return false, nil
+	}
+
+	rps, err := r.k8sService.GetStatefulSetPods(rf.Namespace, GetRedisName(rf))
+	if err != nil {
+		return false, err
+	}
+	for _, rp := range rps.Items {
+		if rp.Status.Phase != corev1.PodRunning {
+			r.logger.Debugf("Pod %s (%s) does not have state %s - %s", rp.Name, rp.Status.PodIP, corev1.PodRunning, rp.Status.Phase)
+			return false, nil
+		}
+
+		if rp.Status.Phase == corev1.PodRunning && rp.DeletionTimestamp != nil {
+			r.logger.Debugf("Pod %s (%s) is in terminating state", rp.Name, rp.Status.PodIP)
+			return false, nil
+		}
 	}
 
 	return true, nil

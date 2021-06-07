@@ -23,6 +23,17 @@ func (r *RedisFailoverHandler) UpdateRedisesPods(rf *redisfailoverv1.RedisFailov
 	if !rf.Bootstrapping() {
 		masterIP, _ = r.rfChecker.GetMasterIP(rf)
 	}
+
+	r.logger.Debug("Checking for any pods not running")
+	podsReady, err := r.rfChecker.CheckAllPodsReady(rf)
+	if err != nil {
+		return err
+	}
+	if !podsReady {
+		r.logger.Debug("There are pods that are not ready")
+		return nil
+	}
+
 	// No perform updates when nodes are syncing, still not connected, etc.
 	for _, rp := range redises {
 		if rp != masterIP {

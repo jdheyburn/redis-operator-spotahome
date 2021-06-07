@@ -173,7 +173,7 @@ func (r *RedisFailoverChecker) GetMasterIP(rf *redisfailoverv1.RedisFailover) (s
 			return "", err
 		}
 		if master {
-			r.logger.Debugf("%s says it is a master", rip)
+			r.logger.With("resource", rf.ObjectMeta.Name).Debugf("%s says it is a master", rip)
 			masters = append(masters, rip)
 		}
 	}
@@ -181,7 +181,7 @@ func (r *RedisFailoverChecker) GetMasterIP(rf *redisfailoverv1.RedisFailover) (s
 	if len(masters) != 1 {
 		return "", errors.New("number of redis nodes known as master is different than 1")
 	}
-	r.logger.Debugf("Master discovered at %s ", masters[0])
+	r.logger.With("resource", rf.ObjectMeta.Name).Debugf("Master discovered at %s ", masters[0])
 	return masters[0], nil
 }
 
@@ -253,7 +253,7 @@ func (r *RedisFailoverChecker) GetMinimumRedisPodTime(rf *redisfailoverv1.RedisF
 		}
 		start := redisNode.Status.StartTime.Round(time.Second)
 		alive := time.Now().Sub(start)
-		r.logger.Debugf("Pod %s has been alive for %.f seconds", redisNode.Status.PodIP, alive.Seconds())
+		r.logger.With("resource", rf.ObjectMeta.Name).Debugf("Pod %s has been alive for %.f seconds", redisNode.Status.PodIP, alive.Seconds())
 		if alive < minTime {
 			minTime = alive
 		}
@@ -350,8 +350,8 @@ func (r *RedisFailoverChecker) GetRedisRevisionHash(podName string, rFailover *r
 }
 
 // CheckRedisSlavesReady returns true if the slave is ready (sync, connected, etc)
-func (r *RedisFailoverChecker) CheckRedisSlavesReady(ip string, rFailover *redisfailoverv1.RedisFailover) (bool, error) {
-	password, err := k8s.GetRedisPassword(r.k8sService, rFailover)
+func (r *RedisFailoverChecker) CheckRedisSlavesReady(ip string, rf *redisfailoverv1.RedisFailover) (bool, error) {
+	password, err := k8s.GetRedisPassword(r.k8sService, rf)
 	if err != nil {
 		return false, err
 	}
@@ -366,17 +366,17 @@ func (r *RedisFailoverChecker) CheckRedisSlavesReady(ip string, rFailover *redis
 	}
 
 	if strings.Contains(replicationInfo, redisSyncing) {
-		r.logger.Debugf("Replica %s is not ready: is still syncing - %s", ip, redisSyncing)
+		r.logger.With("resource", rf.ObjectMeta.Name).Debugf("Replica %s is not ready: is still syncing - %s", ip, redisSyncing)
 		return false, err
 	}
 
 	if strings.Contains(replicationInfo, redisMasterSillPending) {
-		r.logger.Debugf("Replica %s is not ready: master still pending - %s", ip, redisMasterSillPending)
+		r.logger.With("resource", rf.ObjectMeta.Name).Debugf("Replica %s is not ready: master still pending - %s", ip, redisMasterSillPending)
 		return false, err
 	}
 
 	if !strings.Contains(replicationInfo, redisLinkUp) {
-		r.logger.Debugf("Replica %s is not ready: redis link not up - expected %s", ip, redisLinkUp)
+		r.logger.With("resource", rf.ObjectMeta.Name).Debugf("Replica %s is not ready: redis link not up - expected %s", ip, redisLinkUp)
 		return false, err
 	}
 
@@ -391,7 +391,7 @@ func (r *RedisFailoverChecker) CheckAllPodsReady(rf *redisfailoverv1.RedisFailov
 	}
 
 	if ss.Status.ReadyReplicas != ss.Status.Replicas {
-		r.logger.Debugf("Statefulset %s expected %s pods but only %s are ready", ss.ObjectMeta.Name, ss.Status.Replicas, ss.Status.ReadyReplicas)
+		r.logger.With("resource", rf.ObjectMeta.Name).Debugf("Statefulset %s expected %s pods but only %s are ready", ss.ObjectMeta.Name, ss.Status.Replicas, ss.Status.ReadyReplicas)
 		return false, nil
 	}
 
@@ -401,13 +401,13 @@ func (r *RedisFailoverChecker) CheckAllPodsReady(rf *redisfailoverv1.RedisFailov
 	}
 	for _, rp := range rps.Items {
 		if rp.Status.Phase != corev1.PodRunning {
-			r.logger.Debugf("Pod %s (%s) does not have state %s - %s", rp.Name, rp.Status.PodIP, corev1.PodRunning, rp.Status.Phase)
+			r.logger.With("resource", rf.ObjectMeta.Name).Debugf("Pod %s (%s) does not have state %s - %s", rp.Name, rp.Status.PodIP, corev1.PodRunning, rp.Status.Phase)
 			return false, nil
 		}
 
 		// Status.Phase == "Running" and non-empty DeletionTimestamp equals terminating
 		if rp.DeletionTimestamp != nil {
-			r.logger.Debugf("Pod %s (%s) is in terminating state", rp.Name, rp.Status.PodIP)
+			r.logger.With("resource", rf.ObjectMeta.Name).Debugf("Pod %s (%s) is in terminating state", rp.Name, rp.Status.PodIP)
 			return false, nil
 		}
 	}

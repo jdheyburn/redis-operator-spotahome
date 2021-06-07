@@ -26,6 +26,7 @@ type Client interface {
 	SetCustomSentinelConfig(ip string, configs []string) error
 	SetCustomRedisConfig(ip string, configs []string, password string) error
 	SlaveIsReady(ip, password string) (bool, error)
+	GetReplicationInfo(ip, password string) (string, error)
 }
 
 type client struct {
@@ -335,4 +336,19 @@ func (c *client) SlaveIsReady(ip, password string) (bool, error) {
 		strings.Contains(info, redisLinkUp)
 
 	return ok, nil
+}
+
+func (c *client) GetReplicationInfo(ip, password string) (string, error) {
+	options := &rediscli.Options{
+		Addr:     fmt.Sprintf("%s:%s", ip, redisPort),
+		Password: password,
+		DB:       0,
+	}
+	rClient := rediscli.NewClient(options)
+	defer rClient.Close()
+	info, err := rClient.Info("replication").Result()
+	if err != nil {
+		return "", err
+	}
+	return info, nil
 }

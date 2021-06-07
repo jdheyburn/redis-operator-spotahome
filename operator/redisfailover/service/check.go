@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -12,6 +13,21 @@ import (
 	"github.com/spotahome/redis-operator/log"
 	"github.com/spotahome/redis-operator/service/k8s"
 	"github.com/spotahome/redis-operator/service/redis"
+)
+
+// TODO this is duplicated over from service/redis/client.go
+const (
+	sentinelsNumberREString = "sentinels=([0-9]+)"
+	slaveNumberREString     = "slaves=([0-9]+)"
+	sentinelStatusREString  = "status=([a-z]+)"
+	redisMasterHostREString = "master_host:([0-9.]+)"
+	redisRoleMaster         = "role:master"
+	redisSyncing            = "master_sync_in_progress:1"
+	redisMasterSillPending  = "master_host:127.0.0.1"
+	redisLinkUp             = "master_link_status:up"
+	redisPort               = "6379"
+	sentinelPort            = "26379"
+	masterName              = "mymaster"
 )
 
 // RedisFailoverCheck defines the interface able to check the correct status of a redis failover
@@ -339,5 +355,29 @@ func (r *RedisFailoverChecker) CheckRedisSlavesReady(ip string, rFailover *redis
 		return false, err
 	}
 
-	return r.redisClient.SlaveIsReady(ip, password)
+	// JH: This just does what the r.redisClient.SlaveIsReady does, except breaks out the checks line by line
+	// so that we know why the replica is not ready
+	// TODO enhancement: properly parse the replication info instead of just doing string matches
+	// TODO enhancement: add more checks here
+	replicationInfo, err := r.redisClient.GetReplicationInfo(ip, password)
+	if err != nil {
+		return false, err
+	}
+
+	if strings.Contains(replicationInfo, redisSyncing) {
+		r.logger.Debugf("Replica %s is not ready: is still syncing - %s", ip, redisSyncing)
+		return false, err
+	}
+
+	if strings.Contains(replicationInfo, redisMasterSillPending) {
+		r.logger.Debugf("Replica %s is not ready: master still pending - %s", ip, redisMasterSillPending)
+		return false, err
+	}
+
+	if !strings.Contains(replicationInfo, redisLinkUp) {
+		r.logger.Debugf("Replica %s is not ready: redis link not up - expected %s", ip, redisLinkUp)
+		return false, err
+	}
+
+	return true, nil
 }

@@ -22,7 +22,7 @@ RUN go get -u github.com/golang/dep/cmd/dep \
     && chmod 777 /go/pkg/dep
 
 # Mock creator
-RUN go get github.com/vektra/mockery/.../
+RUN GO111MODULE=on go get github.com/vektra/mockery/.../
 
 # Create user
 ARG uid=1000
